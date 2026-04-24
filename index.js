@@ -13,7 +13,7 @@ if (!fs.existsSync("./config.env")) {
   fs.writeFileSync(
     "./config.env",
     `SESSION=${SESSION}
-USE_SERVER=false
+USE_SERVER=true
 TEMP_DIR=./temp
 `
   );
@@ -49,48 +49,8 @@ async function main() {
     return;
   }
 
+  // Initialize the database (only once)
   try {
-    await initializeDatabase();
-    console.log("- Database initialized");
-  } catch (err) {
-    console.error("🚫 Database init failed", err);
-    process.exit(1);
-  }
-
-  const botManager = new BotManager();
-
-  const shutdownHandler = async (signal) => {
-    console.log(`Shutting down: ${signal}`);
-    cleanupKickBot();
-    await botManager.shutdown();
-    process.exit(0);
-  };
-
-  process.on("SIGINT", () => shutdownHandler("SIGINT"));
-  process.on("SIGTERM", () => shutdownHandler("SIGTERM"));
-
-  await botManager.initializeBots();
-  console.log("- Bot started");
-
-  initializeKickBot();
-
-  // Health server (optional, but safe)
-  const PORT = process.env.PORT || 3000;
-
-  const server = http.createServer((req, res) => {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("Bot running");
-  });
-
-  server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
-}
-
-main().catch((err) => {
-  console.error("Fatal error:", err);
-  process.exit(1);
-});  try {
     await initializeDatabase();
     console.log("- Database initialized");
     logger.info("Database initialized successfully.");
@@ -100,7 +60,7 @@ main().catch((err) => {
       dbError
     );
     logger.fatal(
-      "🚫 Failed to initialize database or load configuration. Bot cannot start.",
+      "Failed to initialize database or load configuration. Bot cannot start.",
       dbError
     );
     process.exit(1);
@@ -125,6 +85,7 @@ main().catch((err) => {
 
   initializeKickBot();
 
+  // Start the health / web server (always on, unless explicitly disabled)
   const startServer = () => {
     const PORT = process.env.PORT || 3000;
 
@@ -139,17 +100,21 @@ main().catch((err) => {
     });
 
     server.listen(PORT, () => {
+      console.log(`🌐 Server running on port ${PORT}`);
       logger.info(`Web server listening on port ${PORT}`);
     });
   };
 
-  if (process.env.USE_SERVER !== "false") startServer();
+  if (process.env.USE_SERVER !== "false") {
+    startServer();
+  }
 }
 
+// Start the bot (only when this file is run directly)
 if (require.main === module) {
   main().catch((error) => {
     console.error(`Fatal error in main execution: ${error.message}`, error);
-    logger.fatal({ err: error }, `Fatal error in main execution`);
+    logger.fatal({ err: error }, "Fatal error in main execution");
     process.exit(1);
   });
 }

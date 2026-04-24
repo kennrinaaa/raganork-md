@@ -9,7 +9,9 @@ function convertToBool(text, fault = "true", fault2 = "on") {
 const isVPS = !(__dirname.startsWith("/rgnk") || __dirname.startsWith("/skl"));
 const isHeroku = __dirname.startsWith("/skl");
 const isKoyeb = __dirname.startsWith("/rgnk");
-const isRailway = __dirname.startsWith("/railway");
+// FIXED: Use Railway's own environment variables instead of a fragile directory check
+const isRailway = process.env.RAILWAY_ENVIRONMENT === 'production' ||
+                  process.env.RAILWAY_PUBLIC_DOMAIN?.includes('.railway.app');
 
 const logger = P({ level: process.env.LOG_LEVEL || "silent" });
 
@@ -151,8 +153,14 @@ const sequelize = (() => {
     return sqliteInstance;
   }
 
+  // FIXED: Only disable SSL certificate verification when running on Railway
   return new Sequelize(DATABASE_URL, {
-    dialectOptions: { ssl: { require: true, rejectUnauthorized: false } },
+    dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: !isRailway, // true (strict) locally, false (permissive) on Railway
+      }
+    },
     logging: DEBUG,
     pool: {
       max: 20,
