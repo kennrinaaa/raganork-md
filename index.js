@@ -1,11 +1,28 @@
 const path = require("path");
 const fs = require("fs");
-if (fs.existsSync("./config.env")) {
-  require("dotenv").config({ path: "./config.env" });
+
+// Ensure config.env is generated from Railway ENV
+if (!fs.existsSync("./config.env")) {
+  const SESSION = process.env.SESSION;
+
+  if (!SESSION) {
+    console.error("❌ SESSION not found in environment variables.");
+    process.exit(1);
+  }
+
+  fs.writeFileSync(
+    "./config.env",
+    `SESSION=${SESSION}
+USE_SERVER=false
+TEMP_DIR=./temp
+`
+  );
 }
 
-const { suppressLibsignalLogs } = require("./core/helpers");
+// Load env
+require("dotenv").config({ path: "./config.env" });
 
+const { suppressLibsignalLogs } = require("./core/helpers");
 suppressLibsignalLogs();
 
 const { initializeDatabase } = require("./core/database");
@@ -23,18 +40,57 @@ const {
 async function main() {
   ensureTempDir();
   logger.info(`Created temporary directory at ${TEMP_DIR}`);
+
   console.log(`Raganork v${require("./package.json").version}`);
   console.log(`- Configured sessions: ${SESSION.join(", ")}`);
-  logger.info(`Configured sessions: ${SESSION.join(", ")}`);
-  if (SESSION.length === 0) {
-    const warnMsg =
-      "⚠️ No sessions configured. Please set SESSION environment variable.";
-    console.warn(warnMsg);
-    logger.warn(warnMsg);
+
+  if (!SESSION || SESSION.length === 0) {
+    console.warn("⚠️ No sessions configured. Check Railway ENV.");
     return;
   }
 
   try {
+    await initializeDatabase();
+    console.log("- Database initialized");
+  } catch (err) {
+    console.error("🚫 Database init failed", err);
+    process.exit(1);
+  }
+
+  const botManager = new BotManager();
+
+  const shutdownHandler = async (signal) => {
+    console.log(`Shutting down: ${signal}`);
+    cleanupKickBot();
+    await botManager.shutdown();
+    process.exit(0);
+  };
+
+  process.on("SIGINT", () => shutdownHandler("SIGINT"));
+  process.on("SIGTERM", () => shutdownHandler("SIGTERM"));
+
+  await botManager.initializeBots();
+  console.log("- Bot started");
+
+  initializeKickBot();
+
+  // Health server (optional, but safe)
+  const PORT = process.env.PORT || 3000;
+
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("Bot running");
+  });
+
+  server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+main().catch((err) => {
+  console.error("Fatal error:", err);
+  process.exit(1);
+});  try {
     await initializeDatabase();
     console.log("- Database initialized");
     logger.info("Database initialized successfully.");
